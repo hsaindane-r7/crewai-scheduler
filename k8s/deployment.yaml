@@ -1,0 +1,46 @@
+# Optional: Use this instead of job.yaml if you want a long-running pod
+# for interactive debugging. You can exec into it and run commands manually.
+#
+# kubectl exec -it -n crewai-agent deployment/crewai-agent -- /bin/bash
+# Then run: uv run python main.py "Your goal" --description "Details"
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crewai-agent
+  namespace: crewai-agent
+  labels:
+    app: crewai-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: crewai-agent
+  template:
+    metadata:
+      labels:
+        app: crewai-agent
+    spec:
+      containers:
+        - name: crewai-agent
+          image: crewai-agent:latest
+          imagePullPolicy: Never  # Use local image (built by Tilt)
+          # Override entrypoint to keep pod running for debugging
+          command: ["sleep", "infinity"]
+          envFrom:
+            - secretRef:
+                name: groq-api-key
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          volumeMounts:
+            - name: output
+              mountPath: /app/output
+      volumes:
+        - name: output
+          emptyDir: {}
+

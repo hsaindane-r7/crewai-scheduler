@@ -1,0 +1,250 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  namespace: crewai-agent
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus:9090
+        isDefault: true
+        editable: true
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-provisioning
+  namespace: crewai-agent
+data:
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+      - name: 'default'
+        orgId: 1
+        folder: ''
+        type: file
+        disableDeletion: false
+        editable: true
+        allowUiUpdates: true
+        options:
+          path: /etc/grafana/provisioning/dashboards
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard
+  namespace: crewai-agent
+data:
+  kubernetes-resources.json: |
+    {
+      "id": null,
+      "uid": null,
+      "title": "Kubernetes Resource Utilization",
+      "tags": ["kubernetes", "resources"],
+      "timezone": "browser",
+      "schemaVersion": 16,
+      "version": 0,
+      "refresh": "10s",
+      "panels": [
+          {
+            "id": 1,
+            "title": "Pod CPU Usage",
+            "type": "timeseries",
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+            "datasource": {
+              "type": "prometheus"
+            },
+            "targets": [
+              {
+                "expr": "rate(container_cpu_usage_seconds_total{namespace=\"crewai-agent\"}[5m])",
+                "legendFormat": "{{pod}}",
+                "refId": "A"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "unit": "short",
+                "custom": {}
+              }
+            }
+          },
+          {
+            "id": 2,
+            "title": "Pod Memory Usage",
+            "type": "timeseries",
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+            "datasource": {
+              "type": "prometheus"
+            },
+            "targets": [
+              {
+                "expr": "container_memory_working_set_bytes{namespace=\"crewai-agent\"}",
+                "legendFormat": "{{pod}}",
+                "refId": "A"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "unit": "bytes",
+                "custom": {}
+              }
+            }
+          },
+          {
+            "id": 3,
+            "title": "Pod CPU Requests vs Usage",
+            "type": "timeseries",
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+            "datasource": {
+              "type": "prometheus"
+            },
+            "targets": [
+              {
+                "expr": "kube_pod_container_resource_requests{namespace=\"crewai-agent\", resource=\"cpu\"}",
+                "legendFormat": "{{pod}} - Requested",
+                "refId": "A"
+              },
+              {
+                "expr": "rate(container_cpu_usage_seconds_total{namespace=\"crewai-agent\"}[5m])",
+                "legendFormat": "{{pod}} - Used",
+                "refId": "B"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "unit": "short",
+                "custom": {}
+              }
+            }
+          },
+          {
+            "id": 4,
+            "title": "Pod Memory Requests vs Usage",
+            "type": "timeseries",
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+            "datasource": {
+              "type": "prometheus"
+            },
+            "targets": [
+              {
+                "expr": "kube_pod_container_resource_requests{namespace=\"crewai-agent\", resource=\"memory\"}",
+                "legendFormat": "{{pod}} - Requested",
+                "refId": "A"
+              },
+              {
+                "expr": "container_memory_working_set_bytes{namespace=\"crewai-agent\"}",
+                "legendFormat": "{{pod}} - Used",
+                "refId": "B"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "unit": "bytes",
+                "custom": {}
+              }
+            }
+          }
+        ],
+        "templating": {
+          "list": []
+        },
+        "annotations": {
+          "list": []
+        },
+        "editable": true,
+        "fiscalYearStartMonth": 0,
+        "graphTooltip": 0,
+        "links": [],
+        "liveNow": false,
+        "time": {
+          "from": "now-15m",
+          "to": "now"
+        },
+        "timepicker": {},
+        "timezone": "",
+        "title": "Kubernetes Resource Utilization",
+        "uid": "kubernetes-resources",
+        "version": 0,
+        "weekStart": ""
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: crewai-agent
+  labels:
+    app: grafana
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      containers:
+        - name: grafana
+          image: grafana/grafana:10.2.0
+          ports:
+            - containerPort: 3000
+              name: http
+          env:
+            - name: GF_SECURITY_ADMIN_USER
+              value: "admin"
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              value: "admin"  # Change in production!
+            - name: GF_INSTALL_PLUGINS
+              value: ""
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          volumeMounts:
+            - name: datasources
+              mountPath: /etc/grafana/provisioning/datasources
+            - name: dashboard-provisioning
+              mountPath: /etc/grafana/provisioning/dashboards
+            - name: dashboards
+              mountPath: /var/lib/grafana/dashboards
+            - name: storage
+              mountPath: /var/lib/grafana
+      volumes:
+        - name: datasources
+          configMap:
+            name: grafana-datasources
+        - name: dashboard-provisioning
+          configMap:
+            name: grafana-dashboard-provisioning
+        - name: dashboards
+          configMap:
+            name: grafana-dashboard
+        - name: storage
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: crewai-agent
+  labels:
+    app: grafana
+spec:
+  type: ClusterIP
+  ports:
+    - port: 3000
+      targetPort: 3000
+      name: http
+  selector:
+    app: grafana
+

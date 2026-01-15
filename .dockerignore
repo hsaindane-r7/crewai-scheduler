@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+
+# Output files
+schedule.json
+schedule.txt
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# Kubernetes secrets (never include in image)
+k8s/secret.yaml
+
+# Misc
+*.log
+.DS_Store
+Thumbs.db
+

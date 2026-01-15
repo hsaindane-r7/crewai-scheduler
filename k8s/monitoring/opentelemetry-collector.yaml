@@ -1,0 +1,141 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-config
+  namespace: crewai-agent
+data:
+  otel-collector-config.yaml: |
+    receivers:
+      # Prometheus receiver to scrape metrics
+      prometheus:
+        config:
+          scrape_configs:
+            - job_name: 'kubernetes-pods'
+              kubernetes_sd_configs:
+                - role: pod
+                  namespaces:
+                    names:
+                      - crewai-agent
+              relabel_configs:
+                - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+                  action: keep
+                  regex: true
+                - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+                  action: replace
+                  regex: ([^:]+)(?::\d+)?;(\d+)
+                  replacement: $1:$2
+                  target_label: __address__
+                - action: labelmap
+                  regex: __meta_kubernetes_pod_label_(.+)
+                - action: replace
+                  source_labels: [__meta_kubernetes_pod_name]
+                  target_label: pod
+                - action: replace
+                  source_labels: [__meta_kubernetes_namespace]
+                  target_label: namespace
+
+      # OTLP receiver for OpenTelemetry traces/metrics
+      otlp:
+        protocols:
+          http:
+            endpoint: 0.0.0.0:4318
+          grpc:
+            endpoint: 0.0.0.0:4317
+
+    processors:
+      batch:
+        timeout: 1s
+        send_batch_size: 1024
+      memory_limiter:
+        limit_mib: 512
+
+    exporters:
+      # Export to Prometheus format
+      prometheus:
+        endpoint: "0.0.0.0:8889"
+        const_labels:
+          cluster: "local"
+          environment: "development"
+
+      # Logging exporter for debugging
+      logging:
+        loglevel: info
+
+    service:
+      pipelines:
+        metrics:
+          receivers: [prometheus, otlp]
+          processors: [memory_limiter, batch]
+          exporters: [prometheus, logging]
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [logging]
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector
+  namespace: crewai-agent
+  labels:
+    app: otel-collector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: otel-collector
+  template:
+    metadata:
+      labels:
+        app: otel-collector
+    spec:
+      containers:
+        - name: otel-collector
+          image: otel/opentelemetry-collector-contrib:0.92.0
+          args: ["--config=/etc/otel-collector-config.yaml"]
+          ports:
+            - containerPort: 4317  # OTLP gRPC
+              name: otlp-grpc
+            - containerPort: 4318  # OTLP HTTP
+              name: otlp-http
+            - containerPort: 8889  # Prometheus metrics endpoint
+              name: prometheus
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/otel-collector-config.yaml
+              subPath: otel-collector-config.yaml
+      volumes:
+        - name: config
+          configMap:
+            name: otel-collector-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector
+  namespace: crewai-agent
+  labels:
+    app: otel-collector
+spec:
+  type: ClusterIP
+  ports:
+    - port: 4317
+      targetPort: 4317
+      name: otlp-grpc
+    - port: 4318
+      targetPort: 4318
+      name: otlp-http
+    - port: 8889
+      targetPort: 8889
+      name: prometheus
+  selector:
+    app: otel-collector
+

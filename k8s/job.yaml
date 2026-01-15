@@ -1,0 +1,42 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: crewai-planner
+  namespace: crewai-agent
+  labels:
+    app: crewai-agent
+spec:
+  # Automatically clean up completed jobs after 5 minutes
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 1
+  template:
+    metadata:
+      labels:
+        app: crewai-agent
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: crewai-agent
+          image: crewai-agent:latest
+          imagePullPolicy: Never  # Use local image (built by Tilt)
+          args:
+            - "Get fit in 3 months"
+            - "--description"
+            - "Create a workout plan, schedule gym sessions, track nutrition, and set up weekly progress check-ins."
+          envFrom:
+            - secretRef:
+                name: groq-api-key
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          volumeMounts:
+            - name: output
+              mountPath: /app/output
+      volumes:
+        - name: output
+          emptyDir: {}
+
