@@ -1,4 +1,4 @@
-# CrewAI Task Planner Agent
+## CrewAI Task Planner Agent
 
 A multi-agent task planner and executor built with **CrewAI**, **Pydantic**, and **async Python**. Given a goal, it breaks it into concrete subtasks with time estimates using two AI agents:
 
